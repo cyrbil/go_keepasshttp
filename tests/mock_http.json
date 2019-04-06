@@ -1,0 +1,37 @@
+{
+    "associate": {
+        "Input": "{\"RequestType\": \"associate\"}",
+        "Output": "{\"Count\": 0, \"Error\": \"System.ArgumentNullException: Value cannot be null.\\r\\nParameter name: s\\r\\n   at System.Convert.FromBase64String(String s)\\r\\n   at KeePassHttp.KeePassHttpExt.TestRequestVerifier(Request r, Aes aes, String key)\\r\\n   at KeePassHttp.KeePassHttpExt.AssociateHandler(Request r, Response resp, Aes aes)\\r\\n   at KeePassHttp.KeePassHttpExt.ProcessRequest(Request r, HttpListenerResponse resp)\", \"Hash\": \"46e1d15ab37d8a2700b0c1755244433514b7a13f\", \"RequestType\": \"associate\", \"Success\": false, \"Version\": \"1.8.4.2\"}",
+        "Status": 400
+    },
+    "associate_Key": {
+        "Input": "{\"Key\": \"bAEIsxw6jEluUWUhM0zk64SArODdrsza/QTrPG04aiE=\", \"Nonce\": \"Nptu5pxgWT2/UNl10GkzYA==\", \"RequestType\": \"associate\", \"Verifier\": \"KEQmmmLSXRjV3gi/3ZtitXawzGXTvKqJZMutKVaumsQ=\"}",
+        "Output": "{\"Count\": 0, \"Hash\": \"46e1d15ab37d8a2700b0c1755244433514b7a13f\", \"Id\": \"unittest\", \"Nonce\": \"iELFvgkdrJvMQ0+2jO8z4w==\", \"RequestType\": \"associate\", \"Success\": true, \"Verifier\": \"oTLJLgx0ZI4IDXUu6l8DPX9OOC/9LhG58qa4LI6YbTA=\", \"Version\": \"1.8.4.2\"}",
+        "Status": 200
+    },
+    "get-all-logins": {
+        "Input": "{\"Id\": \"unittest\", \"Nonce\": \"0RKUmClnCt1Hw+k1/ku9FA==\", \"RequestType\": \"get-all-logins\", \"Verifier\": \"ORUBBDfzL281JxjMatqPr8d3Sojh6DWR5wr3OtmpPIc=\"}",
+        "Output": "{\"Count\": 0, \"Entries\": [{\"Login\": \"cdC5dujsUhBxM+ANoOlHQw==\", \"Name\": \"cdC5dujsUhBxM+ANoOlHQw==\", \"Uuid\": \"eBFrl4Nt4TGD60w1mIeFBCHUMXhPzAR8FLpflcHF7T2YAZDkPPclBmoSa3k/Yrnh\"}], \"Hash\": \"46e1d15ab37d8a2700b0c1755244433514b7a13f\", \"Id\": \"unittest\", \"Nonce\": \"oFN7yIWLtjvQUn3zqJNKvg==\", \"RequestType\": \"get-all-logins\", \"Success\": true, \"Verifier\": \"2fLhAMwfoRlF7YNJCHqTK2aUhgvsmN/HE7CnsFYZw28=\", \"Version\": \"1.8.4.2\"}",
+        "Status": 200
+    },
+    "get-logins": {
+        "Input": "{\"Id\": \"unittest\", \"Nonce\": \"0kSaqtpItwNAXMjAsfJIsg==\", \"RequestType\": \"get-logins\", \"Url\": \"sfdSsdHGTQR9Epdfu24sDQ==\", \"Verifier\": \"YLmCHCbW8j2GJMajYkvQNjWWomHGaIDiRHi+7jIRh4w=\"}",
+        "Output": "{\"Count\": 1, \"Entries\": [{\"Login\": \"xD6YOXxCFdAwVjXwZSgafg==\", \"Name\": \"xD6YOXxCFdAwVjXwZSgafg==\", \"Password\": \"xD6YOXxCFdAwVjXwZSgafg==\", \"StringFields\": [{\"Key\": \"kqFI5W7KguuLOvysFcmYjQ==\", \"Value\": \"xD6YOXxCFdAwVjXwZSgafg==\"}, {\"Key\": \"pcbhGbIi6yx+UWVvT9mUYQ==\", \"Value\": \"xD6YOXxCFdAwVjXwZSgafg==\"}, {\"Key\": \"Z6tEW5XUr7KWQGbfH16xLQ==\", \"Value\": \"xD6YOXxCFdAwVjXwZSgafg==\"}, {\"Key\": \"/xi9wsjmsp6sZJkuZK8r/g==\", \"Value\": \"xD6YOXxCFdAwVjXwZSgafg==\"}], \"Uuid\": \"1xxFj6sO1GQl88JjheGGWAO0DhNZQ4w0Z4W6Mna8QiUbRKkCbcgQTq7D6u3QFg2b\"}], \"Hash\": \"46e1d15ab37d8a2700b0c1755244433514b7a13f\", \"Id\": \"unittest\", \"Nonce\": \"L4bkGYxg8aNd1MK+xKo/Dg==\", \"RequestType\": \"get-logins\", \"Success\": true, \"Verifier\": \"q4JxstYJ606I/EIbsObWTVPhKdU24ZY3lH8QtRDRCKM=\", \"Version\": \"1.8.4.2\"}",
+        "Status": 200
+    },
+    "get-logins-count": {
+        "Input": "{\"Id\": \"unittest\", \"Nonce\": \"v55Tqk7Czvlsy0dN3nsyfQ==\", \"RequestType\": \"get-logins-count\", \"Url\": \"cgBs1YoG9hmBDDCA9dJBlw==\", \"Verifier\": \"40mSDstdDc3snVrOuoDlfHnRfu3gmpY8jgS84DOb5sY=\"}",
+        "Output": "{\"Count\": 4, \"Hash\": \"46e1d15ab37d8a2700b0c1755244433514b7a13f\", \"Id\": \"unittest\", \"Nonce\": \"2nKeuqfMkFEFfK3nubyqpg==\", \"RequestType\": \"get-logins-count\", \"Success\": true, \"Verifier\": \"+UwxmJzaV5k0FJArA8TspwO6Cc8DBoawU90HFSvlpS4=\", \"Version\": \"1.8.4.2\"}",
+        "Status": 200
+    },
+    "set-login": {
+        "Input": "{\"Id\": \"unittest\", \"Login\": \"NWjkZzUNQmr+me61657XgQ==\", \"Nonce\": \"Kvi4GCiNCkD16E+xE8HSNQ==\", \"Password\": \"NWjkZzUNQmr+me61657XgQ==\", \"RequestType\": \"set-login\", \"Url\": \"NWjkZzUNQmr+me61657XgQ==\", \"Uuid\": \"6noDtfDYdSB7mZYSod5bfuRUFt2X4jFJVRSCHZnSCQCK2lnzdTRkVkg68JW/wjgm\", \"Verifier\": \"40Bk+gvddzB/uHfhIuIBeLFSQyj8gjOgzgtgaVRvCCU=\"}",
+        "Output": "{\"Count\": 0, \"Hash\": \"46e1d15ab37d8a2700b0c1755244433514b7a13f\", \"Id\": \"unittest\", \"Nonce\": \"n6jMJ89SIwFz3lUI+m8k4Q==\", \"RequestType\": \"set-login\", \"Success\": true, \"Verifier\": \"Zm8hbNYkOVUI4zMhTBQHazgxItqg3epAfVs/HeMX1KY=\", \"Version\": \"1.8.4.2\"}",
+        "Status": 200
+    },
+    "test-associate": {
+        "Input": "{\"Id\": \"unittest\", \"Nonce\": \"rwZKDlxvpBPvpLVQN49CTg==\", \"RequestType\": \"test-associate\", \"TriggerUnlock\": \"true\", \"Verifier\": \"2L44utgeOK/BLS1D1bJyEQm4CmM8n2h0J3nDY5TRlgw=\"}",
+        "Output": "{\"Count\": 0, \"Hash\": \"46e1d15ab37d8a2700b0c1755244433514b7a13f\", \"Id\": \"unittest\", \"Nonce\": \"RoN08IqeNl8sqSMV/1e0TA==\", \"RequestType\": \"test-associate\", \"Success\": true, \"Verifier\": \"b1D1HX3bSrbAShpRxvdJ9mpYGONT/YXNASImnYQa/lI=\", \"Version\": \"1.8.4.2\"}",
+        "Status": 200
+    }
+}
