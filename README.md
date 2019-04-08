@@ -107,14 +107,13 @@ You can simply run the tests using:
     $ cd keepasshttp
     $ go test
     
-(Mock server is not implemented, always use this procedure)
 
 `KeePassHTTP` calls are mocked, to run the tests against a real server, you need to:
  
    - open `tests/test_database.kdbx` in `KeePass` password is `test`
    - set `TEST_WITH_KEEPASS` environment variable
    - run test normally
-   - `KeePass` will ask to store new key (enter `test` as name and press `yes` to overwrite) and yield various messages, this is all normal
+   - `KeePassHTTP` will ask to store new key (enter `unittest` as name and press `yes` to overwrite) and yield various messages, this is all normal
 
 
 
