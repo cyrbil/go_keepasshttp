@@ -143,6 +143,6 @@ To run tests with coverage:
 [report.svg]: https://goreportcard.com/badge/github.com/cyrbil/go_keepasshttp "Report"
 [stability.svg]: https://img.shields.io/badge/stability-stable-success.svg "Stability"
 [license.svg]: https://img.shields.io/github/license/cyrbil/go_keepasshttp.svg "MIT"
-[travis_build.svg]: https://img.shields.io/travis/cyrbil/go_keepasshttp/master.svg "travis.org"
+[travis_build.svg]: https://travis-ci.com/cyrbil/go_keepasshttp.svg?branch=master "travis.org"
 [codecov.svg]: https://codecov.io/gh/cyrbil/go_keepasshttp/branch/master/graph/badge.svg "codecov.io"
 [code_size.svg]: https://img.shields.io/github/languages/code-size/cyrbil/go_keepasshttp.svg "All files"
