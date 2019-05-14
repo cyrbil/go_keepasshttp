@@ -5,7 +5,7 @@ import (
 	"reflect"
 )
 
-// mixup of request/response body fields
+// mix of request/response body fields
 type body struct {
 	// request fields
 	Id            string `json:",omitempty"`
@@ -73,15 +73,17 @@ func (aes256 *aes256CBCPksc7) decryptBase64String(cipherText string) (string, er
 	return clearText, nil
 }
 
-func (kph *keePassHTTP) encryptBody(aes *aes256CBCPksc7, data *body) error {
-	return applyToTag(reflect.ValueOf(data), "encrypted", aes.encryptBase64String)
+func (kph *keePassHTTP) encryptBody(aes *aes256CBCPksc7, data *body) (err error) {
+	err = applyToTag(reflect.ValueOf(data), "encrypted", aes.encryptBase64String)
+	return
 }
 
-func (kph *keePassHTTP) decryptBody(aes *aes256CBCPksc7, data *body) error {
-	return applyToTag(reflect.ValueOf(data), "encrypted", aes.decryptBase64String)
+func (kph *keePassHTTP) decryptBody(aes *aes256CBCPksc7, data *body) (err error) {
+	err = applyToTag(reflect.ValueOf(data), "encrypted", aes.decryptBase64String)
+	return
 }
 
-func applyToTag(value reflect.Value, tagFilter string, convert func(string) (string, error)) error {
+func applyToTag(value reflect.Value, tagFilter string, convert func(string) (string, error)) (err error) {
 	valueKind := value.Kind()
 
 	switch valueKind {
@@ -89,7 +91,7 @@ func applyToTag(value reflect.Value, tagFilter string, convert func(string) (str
 		numEntries := value.Len()
 		for i := 0; i < numEntries; i++ {
 			entry := value.Index(i)
-			err := applyToTag(entry, tagFilter, convert)
+			err = applyToTag(entry, tagFilter, convert)
 			if err != nil {
 				return err
 			}
@@ -112,25 +114,26 @@ func applyToTag(value reflect.Value, tagFilter string, convert func(string) (str
 				if raw == "" {
 					continue
 				}
-				dec, err := convert(raw)
+				var converted string
+				converted, err = convert(raw)
 				if err != nil {
-					return err
+					return
 				}
-				fieldValue.SetString(dec)
+				fieldValue.SetString(converted)
 			} else {
 				valueField := value.Field(i)
-				err := applyToTag(valueField, tagFilter, convert)
+				err = applyToTag(valueField, tagFilter, convert)
 				if err != nil {
-					return err
+					return
 				}
 			}
 		}
 	case reflect.Ptr:
-		err := applyToTag(value.Elem(), tagFilter, convert)
+		err = applyToTag(value.Elem(), tagFilter, convert)
 		if err != nil {
 			return err
 		}
 	}
 
-	return nil
+	return
 }
