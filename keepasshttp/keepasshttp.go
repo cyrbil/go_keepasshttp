@@ -59,7 +59,10 @@ type keePassHTTP struct {
 	dbHash string
 
 	httpClient httpClient
-	randBytes  func(int) ([]byte, error)
+
+	// for mock testing
+	randBytes         func(int) ([]byte, error)
+	mockErrorExpected string
 }
 
 type httpClient interface {
@@ -80,11 +83,10 @@ func New() *keePassHTTP {
 // List all entries that look like an url.
 // Passwords are omitted.
 func (kph *keePassHTTP) List() (credentials []*Credential, err error) {
-	defer kph.catchError(&err)
-	result := kph.request(&body{
+	result, err := kph.request(&body{
 		RequestType: "get-all-logins",
 	})
-	if result != nil {
+	if err == nil {
 		kph.getCredentials(result, &credentials)
 	}
 	return
@@ -93,15 +95,14 @@ func (kph *keePassHTTP) List() (credentials []*Credential, err error) {
 // Count entries for a given `Filter`.
 // Filtering is done the same as `Search` method.
 func (kph *keePassHTTP) Count(filter *Filter) (credentialsCount int, err error) {
-	defer kph.catchError(&err)
-	result := kph.request(&body{
+	result, err := kph.request(&body{
 		RequestType: "get-logins-count",
 		Url:         filter.Url,
 		SubmitUrl:   filter.SubmitUrl,
 		Realm:       filter.Realm,
 	})
 
-	if result != nil {
+	if err == nil && result != nil {
 		credentialsCount = result.Count
 	}
 	return
@@ -112,14 +113,13 @@ func (kph *keePassHTTP) Count(filter *Filter) (credentialsCount int, err error) 
 // to the `Url` is calculated.
 // Only the entries with the minimal distance are returned.
 func (kph *keePassHTTP) Search(filter *Filter) (credentials []*Credential, err error) {
-	defer kph.catchError(&err)
-	result := kph.request(&body{
+	result, err := kph.request(&body{
 		RequestType: "get-logins",
 		Url:         filter.Url,
 		SubmitUrl:   filter.SubmitUrl,
 		Realm:       filter.Realm,
 	})
-	if result != nil {
+	if err == nil {
 		kph.getCredentials(result, &credentials)
 	}
 	return
@@ -131,7 +131,7 @@ func (kph *keePassHTTP) Search(filter *Filter) (credentials []*Credential, err e
 // Only the entry with the minimal distance is returned
 func (kph *keePassHTTP) Get(filter *Filter) (credential *Credential, err error) {
 	credentials, err := kph.Search(filter)
-	if credentials != nil && len(credentials) > 0 {
+	if err == nil && len(credentials) > 0 {
 		credential = credentials[0]
 	}
 	return
@@ -139,8 +139,7 @@ func (kph *keePassHTTP) Get(filter *Filter) (credential *Credential, err error) 
 
 // Create a new credential into KeePass
 func (kph *keePassHTTP) Create(credential *Credential) (err error) {
-	defer kph.catchError(&err)
-	kph.request(&body{
+	_, err = kph.request(&body{
 		RequestType: "set-login",
 		Url:         credential.Url,
 		Login:       credential.Login,
@@ -157,8 +156,7 @@ func (kph *keePassHTTP) Update(credential *Credential) (err error) {
 	if credential.Uuid == "" {
 		return fmt.Errorf("cannot update a credential without its uuid")
 	}
-	defer kph.catchError(&err)
-	kph.request(&body{
+	_, err = kph.request(&body{
 		RequestType: "set-login",
 		Uuid:        credential.Uuid,
 		Url:         credential.Url,
@@ -168,7 +166,20 @@ func (kph *keePassHTTP) Update(credential *Credential) (err error) {
 	return
 }
 
+func (kph *keePassHTTP) mockError(currentError string, err *error) (raiseError bool) {
+	// used for mocking error that are difficult to trigger or test
+	// it always returns false unless a specific error is manually set to be raised
+	if currentError != kph.mockErrorExpected {
+		return false
+	}
+	*err = fmt.Errorf("mocked error: %s", currentError)
+	return true
+}
+
 func (kph *keePassHTTP) getCredentials(result *body, credentials *[]*Credential) {
+	if result == nil {
+		return
+	}
 	for _, entry := range result.Entries {
 		credential := new(Credential)
 		credential.Uuid = entry.Uuid
@@ -184,134 +195,181 @@ func (kph *keePassHTTP) getCredentials(result *body, credentials *[]*Credential)
 	}
 }
 
-// panicOrPass is just a dumb way to get 100% coverage
-// some region were impossible to check for errors
-// this act as a general try catch
-func (kph *keePassHTTP) panicOrPass(err error) {
-	if err != nil {
-		panic(err)
-	}
-}
-
-func (kph *keePassHTTP) catchError(err *error) {
-	if r := recover(); r != nil {
-		*err = r.(error)
-	}
-}
-
-func (kph *keePassHTTP) setDefaults() {
+func (kph *keePassHTTP) setDefaults() (err error) {
 	if kph.Storage == "" {
-		usr, err := user.Current()
-		kph.panicOrPass(err)
+		var usr *user.User
+		usr, err = user.Current()
+		if err != nil || kph.mockError("user.Current", &err) {
+			return
+		}
 		kph.Storage = filepath.Join(usr.HomeDir, defaultStorageName)
 	}
 	if kph.Url == "" {
 		kph.Url = defaultServerUrl
 	}
-}
-
-func (kph *keePassHTTP) load() {
-	kph.setDefaults()
-
-	if _, err := os.Stat(kph.Storage); os.IsNotExist(err) {
-		kph.key, err = kph.randBytes(32)
-		kph.panicOrPass(err)
-
-		kph.uid, kph.dbHash = kph.register()
-
-		fd, err := os.OpenFile(kph.Storage, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
-		kph.panicOrPass(err)
-		defer fd.Close()
-
-		data := []string{
-			base64.StdEncoding.EncodeToString([]byte(kph.uid)),
-			base64.StdEncoding.EncodeToString([]byte(kph.key)),
-			base64.StdEncoding.EncodeToString([]byte(kph.dbHash)),
-		}
-		toWrite := strings.Join(data, "\n")
-		_, err = fd.WriteString(toWrite)
-		kph.panicOrPass(err)
-	} else {
-		fd, err := os.OpenFile(kph.Storage, os.O_RDONLY, 0600)
-		kph.panicOrPass(err)
-		defer fd.Close()
-
-		data, err := ioutil.ReadAll(fd)
-		kph.panicOrPass(err)
-		content := string(data)
-
-		parts := strings.Split(content, "\n")
-		if len(parts) != 3 {
-			err := fmt.Errorf("invalid number of lines in storage %#v", kph.Storage)
-			kph.panicOrPass(err)
-		}
-
-		tmp, err := base64.StdEncoding.DecodeString(parts[0])
-		kph.panicOrPass(err)
-		kph.uid = string(tmp)
-		tmp, err = base64.StdEncoding.DecodeString(parts[1])
-		kph.panicOrPass(err)
-		kph.key = tmp
-		tmp, err = base64.StdEncoding.DecodeString(parts[2])
-		kph.panicOrPass(err)
-		kph.dbHash = string(tmp)
-	}
-
-	kph.authenticate()
-}
-
-func (kph *keePassHTTP) register() (uid string, dbHash string) {
-	data := kph.request(&body{
-		RequestType: "associate",
-		Key:         base64.StdEncoding.EncodeToString(kph.key),
-	})
-	kph.registerValidate(data)
-	return data.Id, data.Hash
-}
-
-func (kph *keePassHTTP) registerValidate(data *body) {
-	if data.Id == "" {
-		err := fmt.Errorf("fail to associate with keePassHTTP, no app id returned")
-		kph.panicOrPass(err)
-	}
-	if data.Hash == "" {
-		err := fmt.Errorf("fail to associate with keePassHTTP, no app database hash returned")
-		kph.panicOrPass(err)
-	}
-}
-
-func (kph *keePassHTTP) authenticate() {
-	defer func() {
-		if r := recover(); r != nil {
-			panic(fmt.Errorf(
-				"fail to authenticate to KeePassHTTP. Possible errors are:\n"+
-					" - Wrong database is opened\n"+
-					" - Wrong key exchange storage (current: %#v)\n"+
-					"(detail: %#v)",
-				kph.Storage, r,
-			))
-		}
-	}()
-	kph.request(&body{
-		RequestType:   "test-associate",
-		TriggerUnlock: true,
-	})
-}
-
-func (kph *keePassHTTP) request(requestData *body) (responseData *body) {
-	if kph.key == nil {
-		kph.load()
-	}
-
-	jsonRequestData := kph.requestPrepare(requestData)
-	responseData = kph.requestSend(jsonRequestData)
-	kph.responseValidate(responseData)
 	return
 }
 
-func (kph *keePassHTTP) requestPrepare(requestData *body) (jsonRequestData []byte) {
+func (kph *keePassHTTP) loadCreate() (err error) {
+	kph.key, err = kph.randBytes(32)
+	if err != nil {
+		return
+	}
+
+	kph.uid, kph.dbHash, err = kph.register()
+	if err != nil {
+		return
+	}
+
+	var fd *os.File
+	fd, err = os.OpenFile(kph.Storage, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	if err != nil || kph.mockError("os.OpenFile", &err) {
+		return
+	}
+	defer fd.Close()
+
+	data := []string{
+		base64.StdEncoding.EncodeToString([]byte(kph.uid)),
+		base64.StdEncoding.EncodeToString([]byte(kph.key)),
+		base64.StdEncoding.EncodeToString([]byte(kph.dbHash)),
+	}
+	toWrite := strings.Join(data, "\n")
+	_, err = fd.WriteString(toWrite)
+	kph.mockError("fd.WriteString", &err)
+	return
+}
+
+func (kph *keePassHTTP) loadOpen() (err error) {
+	var fd *os.File
+	fd, err = os.OpenFile(kph.Storage, os.O_RDONLY, 0600)
+	if err != nil || kph.mockError("os.OpenFile", &err) {
+		return
+	}
+	defer fd.Close()
+
+	var data []byte
+	data, err = ioutil.ReadAll(fd)
+	if err != nil || kph.mockError("ioutil.ReadAll", &err) {
+		return
+	}
+	content := string(data)
+
+	parts := strings.Split(content, "\n")
+	if len(parts) != 3 {
+		return fmt.Errorf("invalid number of lines in storage %#v", kph.Storage)
+	}
+
+	data, err = base64.StdEncoding.DecodeString(parts[0])
+	if err != nil {
+		return
+	}
+	kph.uid = string(data)
+
+	data, err = base64.StdEncoding.DecodeString(parts[1])
+	if err != nil {
+		return
+	}
+	kph.key = data
+
+	data, err = base64.StdEncoding.DecodeString(parts[2])
+	if err != nil {
+		return
+	}
+	kph.dbHash = string(data)
+	return
+}
+
+func (kph *keePassHTTP) load() (err error) {
+	err = kph.setDefaults()
+	if err != nil {
+		return
+	}
+
+	_, err = os.Stat(kph.Storage)
+	if os.IsNotExist(err) {
+		err = kph.loadCreate()
+		if err != nil {
+			return
+		}
+	} else {
+		err = kph.loadOpen()
+		if err != nil {
+			return
+		}
+	}
+
+	err = kph.authenticate()
+	return err
+}
+
+func (kph *keePassHTTP) register() (uid string, dbHash string, err error) {
+	data, err := kph.request(&body{
+		RequestType: "associate",
+		Key:         base64.StdEncoding.EncodeToString(kph.key),
+	})
+	if err != nil {
+		return
+	}
+	err = kph.registerValidate(data)
+	if err != nil || kph.mockError("kph.registerValidate", &err) {
+		return
+	}
+	uid = data.Id
+	dbHash = data.Hash
+	return
+}
+
+func (kph *keePassHTTP) registerValidate(data *body) (err error) {
+	if data.Id == "" {
+		err = fmt.Errorf("fail to associate with keePassHTTP, no app id returned")
+	} else if data.Hash == "" {
+		err = fmt.Errorf("fail to associate with keePassHTTP, no app database hash returned")
+	}
+	return
+}
+
+func (kph *keePassHTTP) authenticate() (err error) {
+	_, err = kph.request(&body{
+		RequestType:   "test-associate",
+		TriggerUnlock: true,
+	})
+	if err != nil {
+		err = fmt.Errorf(
+			"fail to authenticate to KeePassHTTP. Possible errors are:\n"+
+				" - Wrong database is opened\n"+
+				" - Wrong key exchange storage (current: %#v)\n"+
+				"(detail: %#v)",
+			kph.Storage, err,
+		)
+	}
+	return
+}
+
+func (kph *keePassHTTP) request(requestData *body) (responseData *body, err error) {
+	if kph.key == nil {
+		err = kph.load()
+		if err != nil {
+			return
+		}
+	}
+
+	jsonRequestData, err := kph.requestPrepare(requestData)
+	if err != nil {
+		return
+	}
+	responseData, err = kph.requestSend(jsonRequestData)
+	if err != nil {
+		return
+	}
+	err = kph.responseValidate(responseData)
+	return
+}
+
+func (kph *keePassHTTP) requestPrepare(requestData *body) (jsonRequestData []byte, err error) {
 	aes, err := NewAES256CBCPksc7(kph.key, nil)
-	kph.panicOrPass(err)
+	if err != nil {
+		return
+	}
 	iv := base64.StdEncoding.EncodeToString(aes.iv)
 
 	requestData.Id = kph.uid
@@ -319,59 +377,70 @@ func (kph *keePassHTTP) requestPrepare(requestData *body) (jsonRequestData []byt
 	requestData.Verifier = iv
 
 	err = kph.encryptBody(aes, requestData)
-	kph.panicOrPass(err)
+	if err != nil || kph.mockError("kph.encryptBody", &err) {
+		return
+	}
 
 	jsonRequestData, err = json.MarshalIndent(requestData, "", "    ")
-	kph.panicOrPass(err)
 	return
 }
 
-func (kph *keePassHTTP) requestSend(jsonRequestData []byte) (responseData *body) {
+func (kph *keePassHTTP) requestSend(jsonRequestData []byte) (responseData *body, err error) {
 	httpRequest, err := http.NewRequest("POST", kph.Url, bytes.NewBuffer(jsonRequestData))
-	kph.panicOrPass(err)
+	if err != nil || kph.mockError("http.NewRequest", &err) {
+		return
+	}
 	httpRequest.Header.Set("Content-Type", "application/json; charset=utf-8")
 
 	response, err := kph.httpClient.Do(httpRequest)
-	kph.panicOrPass(err)
+	if err != nil || kph.mockError("kph.httpClient.Do", &err) {
+		return
+	}
 	defer response.Body.Close()
 
 	responseText, err := ioutil.ReadAll(response.Body)
-	kph.panicOrPass(err)
+	if err != nil || kph.mockError("ioutil.ReadAll", &err) {
+		return
+	}
 
 	if response.StatusCode != 200 {
 		err = fmt.Errorf("keePassHTTP returned an error (detail: %#v)", responseText)
-		kph.panicOrPass(err)
+		return
 	}
 
 	err = json.Unmarshal(responseText, &responseData)
-	kph.panicOrPass(err)
 	return
 }
 
-func (kph *keePassHTTP) responseValidate(responseData *body) {
+func (kph *keePassHTTP) responseValidate(responseData *body) (err error) {
 	if !responseData.Success {
-		err := fmt.Errorf("keePassHTTP returned an error (detail: %#v)", responseData.Error)
-		kph.panicOrPass(err)
+		return fmt.Errorf("keePassHTTP returned an error (detail: %#v)", responseData.Error)
 	}
 
 	if responseData.Nonce == "" {
-		err := fmt.Errorf("keePassHTTP does not have returned a Nonce")
-		kph.panicOrPass(err)
+		return fmt.Errorf("keePassHTTP does not have returned a Nonce")
 	}
 	responseIv, err := base64.StdEncoding.DecodeString(responseData.Nonce)
-	kph.panicOrPass(err)
+	if err != nil {
+		return
+	}
 
 	if responseData.Verifier == "" {
-		err = fmt.Errorf("keePassHTTP does not have returned a Verifier")
-		kph.panicOrPass(err)
+		return fmt.Errorf("keePassHTTP does not have returned a Verifier")
 	}
 	responseVerifier, err := base64.StdEncoding.DecodeString(responseData.Verifier)
-	kph.panicOrPass(err)
+	if err != nil {
+		return
+	}
 
 	aes, err := NewAES256CBCPksc7(kph.key, responseIv)
-	kph.panicOrPass(err)
+	if err != nil {
+		return
+	}
 	signatureIv, err := aes.decrypt(responseVerifier)
-	kph.panicOrPass(err)
+	if err != nil {
+		return
+	}
 
 	/** to debug signature
 	goal, _ := aes.encrypt([]byte(responseData.Nonce))
@@ -380,28 +449,23 @@ func (kph *keePassHTTP) responseValidate(responseData *body) {
 	**/
 
 	if responseData.Nonce != string(signatureIv) {
-		err = fmt.Errorf("keePassHTTP invalid signature")
-		kph.panicOrPass(err)
+		return fmt.Errorf("keePassHTTP invalid signature")
 	}
 
 	if responseData.Id == "" {
-		err = fmt.Errorf("keePassHTTP does not have returned an appId")
-		kph.panicOrPass(err)
+		return fmt.Errorf("keePassHTTP does not have returned an appId")
 	}
 	if kph.uid != "" && kph.uid != responseData.Id {
-		err = fmt.Errorf("keePassHTTP application id mismatch")
-		kph.panicOrPass(err)
+		return fmt.Errorf("keePassHTTP application id mismatch")
 	}
 
 	if responseData.Hash == "" {
-		err = fmt.Errorf("keePassHTTP does not have returned a Hash")
-		kph.panicOrPass(err)
+		return fmt.Errorf("keePassHTTP does not have returned a Hash")
 	}
 	if kph.dbHash != "" && kph.dbHash != responseData.Hash {
-		err = fmt.Errorf("keePassHTTP database id mismatch")
-		kph.panicOrPass(err)
+		return fmt.Errorf("keePassHTTP database id mismatch")
 	}
 
 	err = kph.decryptBody(aes, responseData)
-	kph.panicOrPass(err)
+	return
 }

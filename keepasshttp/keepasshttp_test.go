@@ -74,6 +74,7 @@ func (c *httpClientMock) Do(req *http.Request) (*http.Response, error) {
 	return res, nil
 }
 
+/*
 func TestKeePassHTTP_catchError(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -98,7 +99,7 @@ func TestKeePassHTTP_catchError(t *testing.T) {
 		})
 	}
 }
-
+//*/
 func TestKeePassHTTP_List(t *testing.T) {
 	tests := []struct {
 		name            string
@@ -223,7 +224,7 @@ func TestKeePassHTTP_Get(t *testing.T) {
 				t.Errorf("keePassHTTP.Get() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			if !reflect.DeepEqual(gotCredential.Uuid, tt.wantCredential) {
+			if gotCredential == nil || gotCredential.Uuid != tt.wantCredential {
 				t.Errorf("keePassHTTP.Get() = %v, want %v", gotCredential, tt.wantCredential)
 			}
 		})
@@ -332,11 +333,12 @@ func TestKeePassHTTP_Update(t *testing.T) {
 
 func TestKeePassHTTP_load(t *testing.T) {
 	tests := []struct {
-		name         string
-		self         *keePassHTTP
-		freshStorage bool
-		corruptLine  int
-		wantErr      bool
+		name          string
+		self          *keePassHTTP
+		freshStorage  bool
+		keepRandBytes bool
+		corruptLine   int
+		wantErr       bool
 	}{
 		{
 			name:         "should succeed at creating a new storage",
@@ -367,6 +369,85 @@ func TestKeePassHTTP_load(t *testing.T) {
 			corruptLine: 3,
 			wantErr:     true,
 		},
+		{
+			name: "should fail when setDefaults fails",
+			self: &keePassHTTP{
+				httpClient:        new(httpClientMock),
+				mockErrorExpected: "user.Current",
+			},
+			wantErr: true,
+		},
+		{
+			name: "should fail when randBytes fails",
+			self: &keePassHTTP{
+				httpClient:        new(httpClientMock),
+				mockErrorExpected: "kph.randBytes",
+				randBytes: func(i int) ([]byte, error) {
+					return nil, fmt.Errorf("mocked error: randBytes")
+				},
+			},
+			wantErr:       true,
+			keepRandBytes: true,
+			freshStorage:  true,
+		},
+		{
+			name: "should fail when kph.register fails",
+			self: &keePassHTTP{
+				httpClient: new(httpClientMock),
+				randBytes:  new(aes256CBCPksc7).randBytes,
+			},
+			wantErr:       true,
+			keepRandBytes: true,
+			freshStorage:  true,
+		},
+		{
+			name: "should fail when kph.registerValidate fails",
+			self: &keePassHTTP{
+				httpClient:        new(httpClientMock),
+				mockErrorExpected: "kph.registerValidate",
+			},
+			wantErr:      true,
+			freshStorage: true,
+		},
+		{
+			name: "should fail when os.OpenFile(create) fails",
+			self: &keePassHTTP{
+				httpClient:        new(httpClientMock),
+				mockErrorExpected: "os.OpenFile",
+			},
+			wantErr:      true,
+			freshStorage: true,
+		},
+		{
+			name: "should fail when os.OpenFile(read) fails",
+			self: &keePassHTTP{
+				httpClient:        new(httpClientMock),
+				randBytes:         new(aes256CBCPksc7).randBytes,
+				mockErrorExpected: "os.OpenFile",
+			},
+			wantErr:     true,
+			corruptLine: -1,
+		},
+		{
+			name: "should fail when ioutil.ReadAll fails",
+			self: &keePassHTTP{
+				httpClient:        new(httpClientMock),
+				randBytes:         new(aes256CBCPksc7).randBytes,
+				mockErrorExpected: "ioutil.ReadAll",
+			},
+			wantErr:     true,
+			corruptLine: -1,
+		},
+		{
+			name: "should fail when fd.WriteString fails",
+			self: &keePassHTTP{
+				httpClient:        new(httpClientMock),
+				randBytes:         new(aes256CBCPksc7).randBytes,
+				mockErrorExpected: "fd.WriteString",
+			},
+			wantErr:      true,
+			freshStorage: true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -378,8 +459,10 @@ func TestKeePassHTTP_load(t *testing.T) {
 				tmpFile.Close()
 				syscall.Unlink(tmpFile.Name())
 				tt.self.Storage = tmpFile.Name()
-				tt.self.randBytes = func(_ int) ([]byte, error) {
-					return base64.StdEncoding.DecodeString("DEBUG+256+bits++++srKysrREVCVUcrMjU2K2JpdHM=")
+				if !tt.keepRandBytes {
+					tt.self.randBytes = func(_ int) ([]byte, error) {
+						return base64.StdEncoding.DecodeString("DEBUG+256+bits++++srKysrREVCVUcrMjU2K2JpdHM=")
+					}
 				}
 			}
 			if tt.corruptLine != 0 {
@@ -402,13 +485,10 @@ func TestKeePassHTTP_load(t *testing.T) {
 				}
 				tt.self.Storage = tmpfile.Name()
 			}
-
-			defer func() {
-				if r := recover(); (r != nil) != tt.wantErr {
-					t.Errorf("keePassHTTP.load() error = %v, wantErr %v", r, tt.wantErr)
-				}
-			}()
-			tt.self.load()
+			err := tt.self.load()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("keePassHTTP.load() error = %v, wantErr %v", err, tt.wantErr)
+			}
 		})
 	}
 }
@@ -423,15 +503,21 @@ func TestKeePassHTTP_setDefaults(t *testing.T) {
 			name: "should set default when nothing is present",
 			self: &keePassHTTP{httpClient: new(httpClientMock)},
 		},
+		{
+			name: "should raise an error when no user if found",
+			self: &keePassHTTP{
+				httpClient:        new(httpClientMock),
+				mockErrorExpected: "user.Current",
+			},
+			wantErr: true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			defer func() {
-				if r := recover(); (r != nil) != tt.wantErr {
-					t.Errorf("keePassHTTP.setDefaults() error = %v, wantErr %v", r, tt.wantErr)
-				}
-			}()
-			tt.self.setDefaults()
+			err := tt.self.setDefaults()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("keePassHTTP.setDefaults() error = %v, wantErr %v", err, tt.wantErr)
+			}
 		})
 	}
 }
@@ -452,15 +538,43 @@ func TestKeePassHTTP_requestSend(t *testing.T) {
 			args:    args{[]byte(`{"RequestType": "associate"}`)},
 			wantErr: true,
 		},
+		{
+			name: "should raise an error when http.NewRequest fails",
+			self: &keePassHTTP{
+				httpClient:        new(httpClientMock),
+				Url:               defaultServerUrl,
+				mockErrorExpected: "http.NewRequest",
+			},
+			args:    args{[]byte(`{"RequestType": "associate"}`)},
+			wantErr: true,
+		},
+		{
+			name: "should raise an error when kph.httpClient.Do fails",
+			self: &keePassHTTP{
+				httpClient:        new(httpClientMock),
+				Url:               defaultServerUrl,
+				mockErrorExpected: "kph.httpClient.Do",
+			},
+			args:    args{[]byte(`{"RequestType": "associate"}`)},
+			wantErr: true,
+		},
+		{
+			name: "should raise an error when ioutil.ReadAll fails",
+			self: &keePassHTTP{
+				httpClient:        new(httpClientMock),
+				Url:               defaultServerUrl,
+				mockErrorExpected: "ioutil.ReadAll",
+			},
+			args:    args{[]byte(`{"RequestType": "associate"}`)},
+			wantErr: true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			defer func() {
-				if r := recover(); (r != nil) != tt.wantErr {
-					t.Errorf("keePassHTTP.requestSend() error = %v, wantErr %v", r, tt.wantErr)
-				}
-			}()
-			tt.self.requestSend(tt.args.jsonRequestData)
+			_, err := tt.self.requestSend(tt.args.jsonRequestData)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("keePassHTTP.requestSend() error = %v, wantErr %v", err, tt.wantErr)
+			}
 		})
 	}
 }
@@ -495,12 +609,10 @@ func TestKeePassHTTP_registerValidate(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			defer func() {
-				if r := recover(); (r != nil) != tt.wantErr {
-					t.Errorf("keePassHTTP.registerValidate() error = %v, wantErr %v", r, tt.wantErr)
-				}
-			}()
-			tt.self.registerValidate(tt.args.data)
+			err := tt.self.registerValidate(tt.args.data)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("keePassHTTP.registerValidate() error = %v, wantErr %v", err, tt.wantErr)
+			}
 		})
 	}
 }
@@ -534,6 +646,15 @@ func TestKeePassHTTP_responseValidate(t *testing.T) {
 			args: args{&body{
 				Success: true,
 				Nonce:   "Bad Nonce",
+			}},
+			wantErr: true,
+		},
+		{
+			name: "should raise an error when nonce is incorrect data",
+			args: args{&body{
+				Success:  true,
+				Nonce:    base64.StdEncoding.EncodeToString([]byte("Invalid")),
+				Verifier: "FQAIEowqEkrl/fJTJEL3WjPiby8KC0vC0dniRPY1yc8=",
 			}},
 			wantErr: true,
 		},
@@ -620,12 +741,10 @@ func TestKeePassHTTP_responseValidate(t *testing.T) {
 			kph.uid = "debugAppId"
 			kph.dbHash = "debugDbHash"
 
-			defer func() {
-				if r := recover(); (r != nil) != tt.wantErr {
-					t.Errorf("keePassHTTP.responseValidate() error = %v, wantErr %v", r, tt.wantErr)
-				}
-			}()
-			kph.responseValidate(tt.args.responseData)
+			err := kph.responseValidate(tt.args.responseData)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("keePassHTTP.responseValidate() error = %v, wantErr %v", err, tt.wantErr)
+			}
 		})
 	}
 }
@@ -634,23 +753,75 @@ func TestKeePassHTTP_authenticate(t *testing.T) {
 	tests := []struct {
 		name    string
 		self    *keePassHTTP
+		key     []byte
 		wantErr bool
 	}{
 		{
 			name:    "should raise an error on unsuccessful response",
 			self:    newKeePassHTTP(),
+			key:     []byte("Invalid key"),
+			wantErr: true,
+		},
+		{
+			name: "should raise an error on unsuccessful load",
+			self: &keePassHTTP{
+				mockErrorExpected: "user.Current",
+			},
+			wantErr: true,
+		},
+		{
+			name: "should raise an error on unsuccessful http request",
+			self: &keePassHTTP{
+				httpClient:        &httpClientMock{},
+				randBytes:         new(aes256CBCPksc7).randBytes,
+				mockErrorExpected: "http.NewRequest",
+			},
+			wantErr: true,
+		},
+		{
+			name: "should raise an error on body encrypt failure",
+			self: &keePassHTTP{
+				httpClient:        &httpClientMock{},
+				randBytes:         new(aes256CBCPksc7).randBytes,
+				mockErrorExpected: "kph.encryptBody",
+			},
 			wantErr: true,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			defer func() {
-				if r := recover(); (r != nil) != tt.wantErr {
-					t.Errorf("keePassHTTP.authenticate() error = %v, wantErr %v", r, tt.wantErr)
-				}
-			}()
-			tt.self.key = []byte("Invalid key")
-			tt.self.authenticate()
+			if tt.key != nil {
+				tt.self.key = tt.key
+			}
+			err := tt.self.authenticate()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("keePassHTTP.authenticate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestKeePassHTTP_getCredentials(t *testing.T) {
+	type args struct {
+		result      *body
+		credentials *[]*Credential
+	}
+	tests := []struct {
+		name    string
+		self    *keePassHTTP
+		args    args
+		wantErr bool
+	}{
+		{
+			name:    "should accept nil body",
+			self:    newKeePassHTTP(),
+			args:    args{},
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.self.getCredentials(tt.args.result, tt.args.credentials)
 		})
 	}
 }
